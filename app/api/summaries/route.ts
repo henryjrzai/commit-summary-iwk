@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
+
+const deleteSummariesSchema = z.object({
+  summaryIds: z.array(z.string().min(1)).min(1),
+});
 
 export async function GET() {
   try {
@@ -44,3 +49,58 @@ export async function GET() {
   }
 }
 
+export async function DELETE(request: Request) {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "User belum login." },
+        { status: 401 },
+      );
+    }
+
+    const body = (await request.json()) as unknown;
+    const validation = deleteSummariesSchema.safeParse(body);
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { success: false, message: "Data hapus tidak valid." },
+        { status: 400 },
+      );
+    }
+
+    const summaryIds = Array.from(new Set(validation.data.summaryIds));
+
+    const deleteResult = await prisma.workSummary.deleteMany({
+      where: {
+        userId: user.id,
+        id: { in: summaryIds },
+      },
+    });
+
+    if (deleteResult.count === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Tidak ada summary yang berhasil dihapus.",
+        },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      deletedCount: deleteResult.count,
+    });
+  } catch (error) {
+    console.error("DELETE /api/summaries error:", error);
+    return NextResponse.json(
+      { success: false, message: "Gagal menghapus summary." },
+      { status: 500 },
+    );
+  }
+}

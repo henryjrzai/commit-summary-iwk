@@ -65,6 +65,12 @@ type GenerateSummaryResponse = {
   totalProjects?: number;
 };
 
+type DeleteSummaryResponse = {
+  success: boolean;
+  message?: string;
+  deletedCount?: number;
+};
+
 type LlmOption = {
   label: string;
   provider: "gemini" | "openrouter";
@@ -133,6 +139,15 @@ export function DashboardSummary() {
   const [exportEndDate, setExportEndDate] = useState("");
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTargetIds, setDeleteTargetIds] = useState<string[]>([]);
+  const [deleteDialogTitle, setDeleteDialogTitle] = useState("Konfirmasi Hapus");
+  const [deleteDialogDescription, setDeleteDialogDescription] = useState(
+    "Data yang dihapus tidak dapat dikembalikan.",
+  );
 
   async function loadSummaries(showLoading = true) {
     if (showLoading) {
@@ -163,6 +178,9 @@ export function DashboardSummary() {
       }));
 
       setSummaries(mapped);
+      setSelectedIds((current) =>
+        current.filter((id) => mapped.some((summary) => summary.id === id)),
+      );
     } finally {
       if (showLoading) {
         setIsLoading(false);
@@ -171,6 +189,83 @@ export function DashboardSummary() {
       }
     }
   }
+
+  function toggleSelectAll(checked: boolean) {
+    if (checked) {
+      setSelectedIds(summaries.map((summary) => summary.id));
+      return;
+    }
+    setSelectedIds([]);
+  }
+
+  function toggleSelectOne(summaryId: string, checked: boolean) {
+    if (checked) {
+      setSelectedIds((current) => Array.from(new Set([...current, summaryId])));
+      return;
+    }
+    setSelectedIds((current) => current.filter((id) => id !== summaryId));
+  }
+
+  function openSingleDeleteDialog(summaryId: string) {
+    setDeleteTargetIds([summaryId]);
+    setDeleteDialogTitle("Hapus Summary");
+    setDeleteDialogDescription("Apakah Anda yakin ingin menghapus 1 summary ini?");
+    setDeleteDialogOpen(true);
+  }
+
+  function openBatchDeleteDialog() {
+    if (selectedIds.length === 0) {
+      setDeleteError("Pilih minimal satu summary untuk dihapus.");
+      return;
+    }
+
+    setDeleteTargetIds(selectedIds);
+    setDeleteDialogTitle("Hapus Summary Terpilih");
+    setDeleteDialogDescription(
+      `Apakah Anda yakin ingin menghapus ${selectedIds.length} summary terpilih?`,
+    );
+    setDeleteDialogOpen(true);
+  }
+
+  async function handleConfirmDelete() {
+    if (deleteTargetIds.length === 0) return;
+
+    setDeleteError(null);
+    setIsDeleting(true);
+    try {
+      const isSingleDelete = deleteTargetIds.length === 1;
+      const response = isSingleDelete
+        ? await fetch(`/api/summaries/${deleteTargetIds[0]}`, {
+            method: "DELETE",
+          })
+        : await fetch("/api/summaries", {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              summaryIds: deleteTargetIds,
+            }),
+          });
+      const payload = (await response.json()) as DeleteSummaryResponse;
+
+      if (!response.ok || !payload.success) {
+        setDeleteError(payload.message ?? "Gagal menghapus summary.");
+        return;
+      }
+
+      setSelectedIds([]);
+      setDeleteDialogOpen(false);
+      setDeleteTargetIds([]);
+      await loadSummaries();
+    } catch {
+      setDeleteError("Terjadi kesalahan saat menghapus summary.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  const isAllSelected = summaries.length > 0 && selectedIds.length === summaries.length;
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -502,6 +597,23 @@ export function DashboardSummary() {
       </CardHeader>
 
       <CardContent className="pt-4">
+        {deleteError ? (
+          <p className="mb-3 text-sm text-destructive">{deleteError}</p>
+        ) : null}
+
+        {summaries.length > 0 ? (
+          <div className="mb-3 flex justify-end">
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={openBatchDeleteDialog}
+              disabled={isDeleting || selectedIds.length === 0}
+            >
+              {isDeleting ? "Menghapus..." : `Hapus Terpilih (${selectedIds.length})`}
+            </Button>
+          </div>
+        ) : null}
+
         {isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-10 w-full" />
@@ -512,6 +624,15 @@ export function DashboardSummary() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    onChange={(event) => toggleSelectAll(event.target.checked)}
+                    aria-label="Pilih semua summary"
+                    disabled={summaries.length === 0 || isDeleting}
+                  />
+                </TableHead>
                 <TableHead>Tanggal Summary</TableHead>
                 <TableHead>Total Project</TableHead>
                 <TableHead>Total Commit</TableHead>
@@ -523,13 +644,24 @@ export function DashboardSummary() {
             <TableBody>
               {summaries.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
                     Belum ada summary.
                   </TableCell>
                 </TableRow>
               ) : (
                 summaries.map((summary) => (
                   <TableRow key={summary.id}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(summary.id)}
+                        onChange={(event) =>
+                          toggleSelectOne(summary.id, event.target.checked)
+                        }
+                        aria-label={`Pilih summary ${summary.dateLabel}`}
+                        disabled={isDeleting}
+                      />
+                    </TableCell>
                     <TableCell>{summary.dateLabel}</TableCell>
                     <TableCell>{summary.totalProjects}</TableCell>
                     <TableCell>{summary.totalCommits}</TableCell>
@@ -540,13 +672,23 @@ export function DashboardSummary() {
                     </TableCell>
                     <TableCell>{summary.createdAt}</TableCell>
                     <TableCell>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void handleViewDetail(summary.id)}
-                      >
-                        Lihat
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleViewDetail(summary.id)}
+                        >
+                          Lihat
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => openSingleDeleteDialog(summary.id)}
+                          disabled={isDeleting}
+                        >
+                          Hapus
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -554,6 +696,30 @@ export function DashboardSummary() {
             </TableBody>
           </Table>
         )}
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{deleteDialogTitle}</DialogTitle>
+              <DialogDescription>{deleteDialogDescription}</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setDeleteDialogOpen(false)}
+                disabled={isDeleting}
+              >
+                Batal
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => void handleConfirmDelete()}
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Menghapus..." : "Ya, Hapus"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

@@ -62,3 +62,45 @@ export async function GET(_: Request, context: RouteContext) {
   }
 }
 
+export async function DELETE(_: Request, context: RouteContext) {
+  try {
+    const { id } = await context.params;
+
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "User belum login." },
+        { status: 401 },
+      );
+    }
+
+    const deleteResult = await prisma.workSummary.deleteMany({
+      where: {
+        id,
+        userId: user.id,
+      },
+    });
+
+    if (deleteResult.count === 0) {
+      return NextResponse.json(
+        { success: false, message: "Summary tidak ditemukan." },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      deletedCount: deleteResult.count,
+    });
+  } catch (error) {
+    console.error("DELETE /api/summaries/[id] error:", error);
+    return NextResponse.json(
+      { success: false, message: "Gagal menghapus summary." },
+      { status: 500 },
+    );
+  }
+}
