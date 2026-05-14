@@ -101,6 +101,11 @@ export function DashboardSummary() {
   const [selectedSummary, setSelectedSummary] = useState<SummaryDetailResponse["data"] | null>(
     null,
   );
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportLoading, setExportLoading] = useState(false);
 
   async function loadSummaries(showLoading = true) {
     if (showLoading) {
@@ -222,6 +227,65 @@ export function DashboardSummary() {
     }
   }
 
+  const isExportDateInvalid = useMemo(() => {
+    if (!exportStartDate || !exportEndDate) return false;
+    return exportEndDate < exportStartDate;
+  }, [exportStartDate, exportEndDate]);
+
+  async function handleExport() {
+    setExportError(null);
+
+    if (!exportStartDate || !exportEndDate) {
+      setExportError("Tanggal mulai dan tanggal selesai wajib diisi.");
+      return;
+    }
+    if (isExportDateInvalid) {
+      setExportError("Tanggal selesai tidak boleh sebelum tanggal mulai.");
+      return;
+    }
+
+    setExportLoading(true);
+    try {
+      const query = new URLSearchParams({
+        startDate: exportStartDate,
+        endDate: exportEndDate,
+      });
+      const response = await fetch(`/api/summaries/export?${query.toString()}`, {
+        method: "GET",
+      });
+
+      if (!response.ok) {
+        let message = "Gagal export summary.";
+        try {
+          const payload = (await response.json()) as { message?: string };
+          if (payload.message) message = payload.message;
+        } catch {
+          // Ignore non-JSON error body.
+        }
+        setExportError(message);
+        return;
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `summary-${exportStartDate}_to_${exportEndDate}.xls`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+
+      setExportOpen(false);
+      setExportStartDate("");
+      setExportEndDate("");
+    } catch {
+      setExportError("Terjadi kesalahan saat export.");
+    } finally {
+      setExportLoading(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="border-b">
@@ -282,6 +346,60 @@ export function DashboardSummary() {
                 </Button>
                 <Button onClick={handleGenerate} disabled={isSubmitting}>
                   {isSubmitting ? "Generating..." : "Generate"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">Export Excel</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Export Summary</DialogTitle>
+                <DialogDescription>
+                  Pilih rentang tanggal untuk export summary dari database ke file
+                  Excel.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="export-start-date">Tanggal Mulai</Label>
+                  <Input
+                    id="export-start-date"
+                    type="date"
+                    value={exportStartDate}
+                    onChange={(event) => setExportStartDate(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="export-end-date">Tanggal Selesai</Label>
+                  <Input
+                    id="export-end-date"
+                    type="date"
+                    value={exportEndDate}
+                    onChange={(event) => setExportEndDate(event.target.value)}
+                  />
+                </div>
+                {isExportDateInvalid ? (
+                  <p className="text-sm text-destructive">
+                    Tanggal selesai tidak boleh sebelum tanggal mulai.
+                  </p>
+                ) : null}
+                {exportError ? (
+                  <p className="text-sm text-destructive">{exportError}</p>
+                ) : null}
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  disabled={exportLoading}
+                  onClick={() => setExportOpen(false)}
+                >
+                  Tutup
+                </Button>
+                <Button onClick={handleExport} disabled={exportLoading}>
+                  {exportLoading ? "Exporting..." : "Export"}
                 </Button>
               </DialogFooter>
             </DialogContent>
