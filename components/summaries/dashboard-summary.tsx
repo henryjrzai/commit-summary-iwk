@@ -37,24 +37,26 @@ type SummaryRow = {
   createdAt: string;
 };
 
-const mockSummaries: SummaryRow[] = [
-  {
-    id: "sum-1",
-    dateLabel: "Rabu, 13 Mei 2026",
-    totalProjects: 2,
-    totalCommits: 9,
-    status: "COMPLETED",
-    createdAt: "2026-05-13 18:15",
-  },
-  {
-    id: "sum-2",
-    dateLabel: "Selasa, 12 Mei 2026",
-    totalProjects: 1,
-    totalCommits: 4,
-    status: "PROCESSING",
-    createdAt: "2026-05-12 17:04",
-  },
-];
+type SummaryListResponse = {
+  success: boolean;
+  message?: string;
+  data?: Array<{
+    id: string;
+    dateLabel: string;
+    totalProjects: number;
+    totalCommits: number;
+    status: SummaryStatus;
+    createdAt: string;
+  }>;
+};
+
+type GenerateSummaryResponse = {
+  success: boolean;
+  message?: string;
+  summaryId?: string;
+  totalCommits?: number;
+  totalProjects?: number;
+};
 
 function statusVariant(status: SummaryStatus): "default" | "secondary" | "destructive" | "outline" {
   if (status === "COMPLETED") return "default";
@@ -76,20 +78,102 @@ export function DashboardSummary() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  async function loadSummaries(showLoading = true) {
+    if (showLoading) {
+      setIsLoading(true);
+    }
+    try {
+      const response = await fetch("/api/summaries", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as SummaryListResponse;
+
+      if (!response.ok || !payload.success) {
+        setSummaries([]);
+        return;
+      }
+
+      const mapped: SummaryRow[] = (payload.data ?? []).map((item) => ({
+        id: item.id,
+        dateLabel: item.dateLabel,
+        totalProjects: item.totalProjects,
+        totalCommits: item.totalCommits,
+        status: item.status,
+        createdAt: new Date(item.createdAt).toLocaleString("id-ID", {
+          timeZone: "Asia/Jakarta",
+          hour12: false,
+        }),
+      }));
+
+      setSummaries(mapped);
+    } finally {
+      if (showLoading) {
+        setIsLoading(false);
+      } else {
+        setIsLoading(false);
+      }
+    }
+  }
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSummaries(mockSummaries);
-      setIsLoading(false);
-    }, 700);
-
-    return () => clearTimeout(timer);
+    const bootstrap = async () => {
+      await loadSummaries(false);
+    };
+    void bootstrap();
   }, []);
 
   const isDateInvalid = useMemo(() => {
     if (!startDate || !endDate) return false;
     return endDate < startDate;
   }, [startDate, endDate]);
+
+  async function handleGenerate() {
+    setFormError(null);
+
+    if (!startDate || !endDate) {
+      setFormError("Tanggal mulai dan tanggal selesai wajib diisi.");
+      return;
+    }
+
+    if (isDateInvalid) {
+      setFormError("Tanggal selesai tidak boleh sebelum tanggal mulai.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch("/api/summaries/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          startDate,
+          endDate,
+        }),
+      });
+
+      const payload = (await response.json()) as GenerateSummaryResponse;
+
+      if (!response.ok || !payload.success) {
+        setFormError(payload.message ?? "Gagal membuat summary.");
+        return;
+      }
+
+      setDialogOpen(false);
+      setStartDate("");
+      setEndDate("");
+      await loadSummaries();
+    } catch {
+      setFormError("Terjadi kesalahan saat menghubungi server.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <Card>
@@ -104,8 +188,8 @@ export function DashboardSummary() {
               <DialogHeader>
                 <DialogTitle>Buat Summary</DialogTitle>
                 <DialogDescription>
-                  Pilih rentang tanggal untuk membuat summary. Proses generate API
-                  belum diaktifkan pada tahap ini.
+                  Pilih rentang tanggal untuk membuat summary berdasarkan commit
+                  GitHub.
                 </DialogDescription>
               </DialogHeader>
 
@@ -135,14 +219,22 @@ export function DashboardSummary() {
                     Tanggal selesai tidak boleh sebelum tanggal mulai.
                   </p>
                 ) : null}
+
+                {formError ? (
+                  <p className="text-sm text-destructive">{formError}</p>
+                ) : null}
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                <Button
+                  variant="outline"
+                  onClick={() => setDialogOpen(false)}
+                  disabled={isSubmitting}
+                >
                   Tutup
                 </Button>
-                <Button disabled>
-                  Generate (Segera)
+                <Button onClick={handleGenerate} disabled={isSubmitting}>
+                  {isSubmitting ? "Generating..." : "Generate"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -197,4 +289,3 @@ export function DashboardSummary() {
     </Card>
   );
 }
-
