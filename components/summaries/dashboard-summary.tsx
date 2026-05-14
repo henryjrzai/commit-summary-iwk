@@ -18,6 +18,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -58,6 +65,25 @@ type GenerateSummaryResponse = {
   totalProjects?: number;
 };
 
+type LlmOption = {
+  label: string;
+  provider: "gemini" | "openrouter";
+  model: string;
+};
+
+const llmOptions: LlmOption[] = [
+  {
+    label: "Gemini 2.5 Flash Lite",
+    provider: "gemini",
+    model: "gemini-2.5-flash-lite",
+  },
+  {
+    label: "OpenRouter MiniMax M2.5 (Free)",
+    provider: "openrouter",
+    model: "minimax/minimax-m2.5:free",
+  },
+];
+
 type SummaryDetailResponse = {
   success: boolean;
   message?: string;
@@ -95,6 +121,7 @@ export function DashboardSummary() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [selectedLlm, setSelectedLlm] = useState<string>(llmOptions[0].model);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -170,6 +197,12 @@ export function DashboardSummary() {
       return;
     }
 
+    const selectedOption = llmOptions.find((item) => item.model === selectedLlm);
+    if (!selectedOption) {
+      setFormError("Model LLM tidak valid.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const response = await fetch("/api/summaries/generate", {
@@ -180,6 +213,8 @@ export function DashboardSummary() {
         body: JSON.stringify({
           startDate,
           endDate,
+          llmProvider: selectedOption.provider,
+          llmModel: selectedOption.model,
         }),
       });
 
@@ -305,6 +340,22 @@ export function DashboardSummary() {
               </DialogHeader>
 
               <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="llm-model">Model LLM</Label>
+                  <Select value={selectedLlm} onValueChange={setSelectedLlm}>
+                    <SelectTrigger id="llm-model" className="w-full">
+                      <SelectValue placeholder="Pilih model LLM" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {llmOptions.map((option) => (
+                        <SelectItem key={option.model} value={option.model}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="start-date">Tanggal Mulai</Label>
                   <Input

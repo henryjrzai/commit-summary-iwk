@@ -1,6 +1,7 @@
 type GeminiGenerateSummaryInput = {
   prompt: string;
   apiKey: string;
+  model: string;
 };
 
 type GeminiCandidatePart = {
@@ -22,9 +23,8 @@ type GeminiGenerateContentResponse = {
 export async function generateWithGemini({
   prompt,
   apiKey,
+  model,
 }: GeminiGenerateSummaryInput): Promise<string> {
-  // const model = "gemini-2.0-flash";
-  const model = "gemini-2.5-flash-lite";
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const response = await fetch(endpoint, {
@@ -45,8 +45,6 @@ export async function generateWithGemini({
     }),
     cache: "no-store",
   });
-  console.log("Gemini API response status:", response.status, response.statusText);
-
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(

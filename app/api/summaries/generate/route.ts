@@ -10,6 +10,8 @@ const generateSummarySchema = z
   .object({
     startDate: z.string().min(1),
     endDate: z.string().min(1),
+    llmProvider: z.enum(["gemini", "openrouter"]).optional(),
+    llmModel: z.string().min(1).optional(),
   })
   .superRefine((value, context) => {
     const start = new Date(value.startDate);
@@ -105,7 +107,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { startDate, endDate } = parsed.data;
+    const { startDate, endDate, llmProvider, llmModel } = parsed.data;
     const { start, end } = buildUtcDayRange(startDate, endDate);
     const since = start.toISOString();
     const until = end.toISOString();
@@ -206,6 +208,13 @@ export async function POST(request: Request) {
     const summaryHtml = await generateWorkSummaryHtml({
       dateLabel,
       commits: flatCommits,
+      llmSelection:
+        llmProvider && llmModel
+          ? {
+              provider: llmProvider,
+              model: llmModel,
+            }
+          : undefined,
     });
 
     const totalProjects = new Set(flatCommits.map((commit) => `${commit.owner}/${commit.repo}`))
@@ -222,7 +231,7 @@ export async function POST(request: Request) {
         summaryText: null,
         totalCommits: flatCommits.length,
         totalProjects,
-        llmProvider: process.env.LLM_PROVIDER ?? "gemini",
+        llmProvider: llmProvider ?? process.env.LLM_PROVIDER ?? "gemini",
       },
       select: {
         id: true,

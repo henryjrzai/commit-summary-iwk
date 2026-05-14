@@ -2,10 +2,17 @@ import type { NormalizedGithubCommit } from "@/lib/github/fetch-commits";
 import { sanitizeSummaryHtml } from "@/lib/sanitize-html";
 
 import { generateWithGemini } from "./providers/gemini";
+import { generateWithOpenRouter } from "./providers/openrouter";
 
 type GenerateWorkSummaryInput = {
   dateLabel: string;
   commits: NormalizedGithubCommit[];
+  llmSelection?: LlmSelection;
+};
+
+export type LlmSelection = {
+  provider: "gemini" | "openrouter";
+  model: string;
 };
 
 function buildPrompt({ dateLabel, commits }: GenerateWorkSummaryInput) {
@@ -68,26 +75,48 @@ function unwrapHtmlCodeFence(raw: string) {
 export async function generateWorkSummaryHtml({
   dateLabel,
   commits,
+  llmSelection,
 }: GenerateWorkSummaryInput): Promise<string> {
   if (commits.length === 0) {
     throw new Error("Cannot generate summary from empty commit list.");
   }
 
-  const provider = (process.env.LLM_PROVIDER ?? "gemini").toLowerCase();
-
-  if (provider !== "gemini") {
-    throw new Error(
-      `Unsupported LLM_PROVIDER "${provider}". Currently only "gemini" is supported.`,
-    );
-  }
-
-  const geminiApiKey = process.env.GEMINI_API_KEY;
-  if (!geminiApiKey) {
-    throw new Error("Missing GEMINI_API_KEY on server environment.");
-  }
-
   const prompt = buildPrompt({ dateLabel, commits });
-  const rawHtml = await generateWithGemini({ prompt, apiKey: geminiApiKey });
+  const defaultProvider = (process.env.LLM_PROVIDER ?? "gemini").toLowerCase();
+  const provider = llmSelection?.provider ?? (defaultProvider as "gemini" | "openrouter");
+
+  let rawHtml = "";
+  if (provider === "gemini") {
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) {
+      throw new Error("Missing GEMINI_API_KEY on server environment.");
+    }
+    const geminiModel = llmSelection?.model || "gemini-2.5-flash-lite";
+    rawHtml = await generateWithGemini({
+      prompt,
+      apiKey: geminiApiKey,
+      model: geminiModel,
+    });
+  } else if (provider === "openrouter") {
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    if (!openRouterApiKey) {
+      throw new Error("Missing OPENROUTER_API_KEY on server environment.");
+    }
+    const selectedModel = llmSelection?.model;
+    const openRouterModel =
+      !selectedModel || selectedModel === "openrouter/free"
+        ? process.env.OPENROUTER_MODEL_FREE || "minimax/minimax-m2.5:free"
+        : selectedModel;
+    rawHtml = await generateWithOpenRouter({
+      prompt,
+      apiKey: openRouterApiKey,
+      model: openRouterModel,
+    });
+  } else {
+    throw new Error(`Unsupported LLM provider "${provider}".`);
+  }
+
   const normalizedHtml = unwrapHtmlCodeFence(rawHtml);
   return sanitizeSummaryHtml(normalizedHtml);
 }
+
