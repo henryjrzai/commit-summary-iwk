@@ -58,6 +58,21 @@ type GenerateSummaryResponse = {
   totalProjects?: number;
 };
 
+type SummaryDetailResponse = {
+  success: boolean;
+  message?: string;
+  data?: {
+    id: string;
+    title: string;
+    dateLabel: string;
+    summaryHtml: string;
+    totalCommits: number;
+    totalProjects: number;
+    status: SummaryStatus;
+    createdAt: string;
+  };
+};
+
 function statusVariant(status: SummaryStatus): "default" | "secondary" | "destructive" | "outline" {
   if (status === "COMPLETED") return "default";
   if (status === "PROCESSING") return "secondary";
@@ -80,6 +95,12 @@ export function DashboardSummary() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [selectedSummary, setSelectedSummary] = useState<SummaryDetailResponse["data"] | null>(
+    null,
+  );
 
   async function loadSummaries(showLoading = true) {
     if (showLoading) {
@@ -175,6 +196,32 @@ export function DashboardSummary() {
     }
   }
 
+  async function handleViewDetail(summaryId: string) {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetailError(null);
+    setSelectedSummary(null);
+
+    try {
+      const response = await fetch(`/api/summaries/${summaryId}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as SummaryDetailResponse;
+
+      if (!response.ok || !payload.success || !payload.data) {
+        setDetailError(payload.message ?? "Gagal memuat detail summary.");
+        return;
+      }
+
+      setSelectedSummary(payload.data);
+    } catch {
+      setDetailError("Terjadi kesalahan saat mengambil detail summary.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="border-b">
@@ -239,6 +286,49 @@ export function DashboardSummary() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+            <DialogContent className="sm:max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Detail Summary</DialogTitle>
+                <DialogDescription>
+                  Ringkasan aktivitas kerja berdasarkan commit pada rentang tanggal
+                  yang dipilih.
+                </DialogDescription>
+              </DialogHeader>
+
+              {detailLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-6 w-1/2" />
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              ) : null}
+
+              {!detailLoading && detailError ? (
+                <p className="text-sm text-destructive">{detailError}</p>
+              ) : null}
+
+              {!detailLoading && !detailError && selectedSummary ? (
+                <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
+                  <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-3">
+                    <p>Total Project: {selectedSummary.totalProjects}</p>
+                    <p>Total Commit: {selectedSummary.totalCommits}</p>
+                    <p>Status: {statusLabel(selectedSummary.status)}</p>
+                  </div>
+                  <div
+                    className="prose prose-sm max-w-none dark:prose-invert"
+                    dangerouslySetInnerHTML={{ __html: selectedSummary.summaryHtml }}
+                  />
+                </div>
+              ) : null}
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDetailOpen(false)}>
+                  Tutup
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </CardHeader>
 
@@ -258,12 +348,13 @@ export function DashboardSummary() {
                 <TableHead>Total Commit</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Dibuat</TableHead>
+                <TableHead>Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {summaries.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
                     Belum ada summary.
                   </TableCell>
                 </TableRow>
@@ -279,6 +370,15 @@ export function DashboardSummary() {
                       </Badge>
                     </TableCell>
                     <TableCell>{summary.createdAt}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleViewDetail(summary.id)}
+                      >
+                        Lihat
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))
               )}

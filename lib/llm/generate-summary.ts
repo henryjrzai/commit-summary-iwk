@@ -53,7 +53,16 @@ function buildPrompt({ dateLabel, commits }: GenerateWorkSummaryInput) {
   <ul>
     <li>Mengembangkan ... - done</li>
     <li>Memperbaiki ... - done</li>
-  </ul>`;
+</ul>`;
+}
+
+function unwrapHtmlCodeFence(raw: string) {
+  const trimmed = raw.trim();
+  const fencedMatch = trimmed.match(/^```(?:html)?\s*([\s\S]*?)\s*```$/i);
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+  return trimmed;
 }
 
 export async function generateWorkSummaryHtml({
@@ -79,7 +88,6 @@ export async function generateWorkSummaryHtml({
 
   const prompt = buildPrompt({ dateLabel, commits });
   const rawHtml = await generateWithGemini({ prompt, apiKey: geminiApiKey });
-
-  return sanitizeSummaryHtml(rawHtml);
+  const normalizedHtml = unwrapHtmlCodeFence(rawHtml);
+  return sanitizeSummaryHtml(normalizedHtml);
 }
-
