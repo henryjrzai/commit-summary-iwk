@@ -64,9 +64,9 @@ function formatDateLabel(startDate: Date, endDate: Date) {
   return `${formatter.format(startDate)} - ${formatter.format(endDate)}`;
 }
 
-function uniqueCommits(commits: NormalizedGithubCommit[]) {
+function uniqueCommits<T extends NormalizedGithubCommit>(commits: T[]) {
   const seen = new Set<string>();
-  const result: NormalizedGithubCommit[] = [];
+  const result: T[] = [];
 
   for (const commit of commits) {
     const key = `${commit.owner}/${commit.repo}/${commit.sha}`;
